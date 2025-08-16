@@ -64,7 +64,11 @@ Execute the following command from your terminal:
 python bot.py
 ```
 
-
+## ✨ Future improvements  
+Enrich default settings  
+Use the bot in groups  
+Bot inserts data into google sheets or database  
+Voice to text  
 
 
 <!--
