@@ -49,7 +49,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Get AI response
         response = await client.chat.completions.create(
-            model="gpt-4o-mini",  # Correct model name
+            model="gpt-4.1-nano",  # GPT-4.1 nano model
             messages=[
                 {
                     "role": "system", 
