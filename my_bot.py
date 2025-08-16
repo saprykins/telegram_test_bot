@@ -1,22 +1,29 @@
 import os
 import asyncio
 from dotenv import load_dotenv
-from openai import AsyncOpenAI
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
+from azure.ai.inference import ChatCompletionsClient
+from azure.ai.inference.models import SystemMessage, UserMessage
+from azure.core.credentials import AzureKeyCredential
 
 # Load environment variables
 load_dotenv()
 
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
 
-# Initialize OpenAI client
+# Initialize GitHub AI client
 client = None
-if OPENAI_API_KEY:
-    client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+if GITHUB_TOKEN:
+    endpoint = "https://models.github.ai/inference"
+    client = ChatCompletionsClient(
+        endpoint=endpoint,
+        credential=AzureKeyCredential(GITHUB_TOKEN),
+    )
 else:
-    print("Error: OPENAI_API_KEY not found. Please add it to your .env file.")
+    print("Error: GITHUB_TOKEN not found. Please add it to your .env file.")
+    
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /start command"""
@@ -32,6 +39,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text="Commands:\n/start - Start the bot\n/help - Show this help\n\nJust send me any text message and I'll respond!"
     )
 
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle regular text messages"""
     if not client:
@@ -42,33 +50,31 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     user_message = update.message.text
-    
+
     try:
         # Send typing indicator
         await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
-        
+
         # Get AI response
-        response = await client.chat.completions.create(
-            model="gpt-4.1-nano",  # GPT-4.1 nano model
+        response = await asyncio.to_thread(
+            client.complete,
             messages=[
-                {
-                    "role": "system", 
-                    "content": "You are a very concise assistant. Give brief, direct answers in 1-2 sentences max. Be helpful but not conversational."
-                },
-                {"role": "user", "content": user_message}
+                SystemMessage("You are a very concise assistant. Give brief, direct answers in 1-2 sentences max. Be helpful but not conversational."),
+                UserMessage(user_message)
             ],
-            max_tokens=100,  # Use max_tokens instead of max_completion_tokens
+            model="openai/gpt-4.1-nano",
+            # model="openai/gpt-5-nano", # not available
             temperature=0.7
         )
-        
+
         ai_response = response.choices[0].message.content
-        
+
         # Send response
         await context.bot.send_message(
             chat_id=update.effective_chat.id,
             text=ai_response
         )
-        
+
     except Exception as e:
         print(f"Error: {e}")
         await context.bot.send_message(
@@ -76,14 +82,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text="Sorry, something went wrong. Try again."
         )
 
+
 def main():
     """Main function to run the bot"""
     if not BOT_TOKEN:
         print("Error: TELEGRAM_BOT_TOKEN not found. Please add it to your .env file.")
         return
     
-    if not OPENAI_API_KEY:
-        print("Error: OPENAI_API_KEY not found. Please add it to your .env file.")
+    if not GITHUB_TOKEN:
+        print("Error: GITHUB_TOKEN not found. Please add it to your .env file.")
         return
 
     # Create application
