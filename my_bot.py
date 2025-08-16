@@ -1,66 +1,104 @@
-# This bot script requires the 'python-telegram-bot' and 'python-dotenv' libraries.
-# To install them, open your terminal or command prompt and run:
-# pip install python-telegram-bot python-dotenv
-
-# First, import the necessary modules. We'll use os to get environment variables
-# and dotenv to load them from the .env file.
 import os
+import asyncio
 from dotenv import load_dotenv
+from openai import AsyncOpenAI
 from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes, ApplicationBuilder
+from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 
-# This tells the script to look for a .env file in the current directory and
-# load the variables it finds there into the environment.
+# Load environment variables
 load_dotenv()
 
-# We will now securely get the token from the environment.
-# It will either be set by your system or loaded from the .env file.
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 
-# This is the function that will be executed when the '/start' command is used.
+# Initialize OpenAI client
+client = None
+if OPENAI_API_KEY:
+    client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+else:
+    print("Error: OPENAI_API_KEY not found. Please add it to your .env file.")
+
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Sends a greeting message to the user."""
+    """Handle /start command"""
     await context.bot.send_message(
         chat_id=update.effective_chat.id,
-        text="hey bro"
+        text="Hey! I'm a concise AI assistant. Send me any message and I'll respond briefly."
     )
 
-# This is the function for our custom command, which we'll call '/think'.
-async def think_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Sends a message indicating the bot is thinking."""
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /help command"""
     await context.bot.send_message(
         chat_id=update.effective_chat.id,
-        text="let me think"
+        text="Commands:\n/start - Start the bot\n/help - Show this help\n\nJust send me any text message and I'll respond!"
     )
 
-# The main function to set up and run the bot.
-def main():
-    """Starts the bot using the polling method to listen for updates."""
-    # Check if the token was successfully loaded.
-    if not BOT_TOKEN:
-        print("Error: Bot token not found. Please create a .env file or set the TELEGRAM_BOT_TOKEN environment variable.")
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle regular text messages"""
+    if not client:
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="Sorry, AI is unavailable right now."
+        )
         return
 
-    # Create the application builder with our bot token.
-    app_builder = ApplicationBuilder().token(BOT_TOKEN)
+    user_message = update.message.text
     
-    # Build the application instance.
-    application = app_builder.build()
+    try:
+        # Send typing indicator
+        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
+        
+        # Get AI response
+        response = await client.chat.completions.create(
+            model="gpt-4o-mini",  # Correct model name
+            messages=[
+                {
+                    "role": "system", 
+                    "content": "You are a very concise assistant. Give brief, direct answers in 1-2 sentences max. Be helpful but not conversational."
+                },
+                {"role": "user", "content": user_message}
+            ],
+            max_tokens=100,  # Use max_tokens instead of max_completion_tokens
+            temperature=0.7
+        )
+        
+        ai_response = response.choices[0].message.content
+        
+        # Send response
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=ai_response
+        )
+        
+    except Exception as e:
+        print(f"Error: {e}")
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="Sorry, something went wrong. Try again."
+        )
 
-    # Create a handler for the '/start' command and link it to our start_command function.
-    start_handler = CommandHandler('start', start_command)
+def main():
+    """Main function to run the bot"""
+    if not BOT_TOKEN:
+        print("Error: TELEGRAM_BOT_TOKEN not found. Please add it to your .env file.")
+        return
     
-    # Create a handler for the '/think' command and link it to our think_command function.
-    think_handler = CommandHandler('think', think_command)
+    if not OPENAI_API_KEY:
+        print("Error: OPENAI_API_KEY not found. Please add it to your .env file.")
+        return
 
-    # Add both handlers to the application.
-    application.add_handler(start_handler)
-    application.add_handler(think_handler)
+    # Create application
+    application = Application.builder().token(BOT_TOKEN).build()
 
-    # Start the bot.
-    print("Bot is running...")
-    application.run_polling()
+    # Add handlers
+    application.add_handler(CommandHandler('start', start_command))
+    application.add_handler(CommandHandler('help', help_command))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-# This makes sure our main function is called when the script is run.
+    print("Bot is starting...")
+    print("Press Ctrl+C to stop the bot")
+    
+    # Run the bot
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
+
 if __name__ == '__main__':
     main()
